@@ -1,0 +1,6 @@
+<img width="200px" *ngIf="product.images.length > 0" [src]="product.images[0]" alt="">
+
+<h2>${{product.price}}</h2>
+<p>{{product.title}}</p>
+<button (click)="OnShowDetail()">Detail</button>
+<button (click)="addTocart()">Add cart</button>
