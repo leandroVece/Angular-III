@@ -508,3 +508,265 @@ Despues de configurar vamos a nuestro componente para capturar estos errores.
 Luego creamos un boton para probar si captura el error correctamente.
 
     <button (click)="OnShowDetail('6545641')">prueba de error</button>
+
+## Login y manejo de Auth
+
+Cuando nos conectamos nosotros tenemos 2 instacias, la aplicacion y nuestra Api. Cuando nos logueamos lo hacemos por medio de un login para enviar el usuario y el pasword. si ambos son correcto el backend nos devolvera un token (JWT). una vez obtenido el token lo almacenaremos en algun lugar para usarlo en alguna aplicacion protegida.
+
+Comencemos creando un nuevo servicios llamado auth, otro para el token y otro para los usuarios.
+
+    ng g s services/auth
+    ng g s services/user
+    ng g s services/token
+
+comencemos configurando user.service para obtener y crear usuarios. Como ya sabemos necesitamos importar httpcliente
+
+    import { Injectable } from '@angular/core';
+    import { HttpClient } from '@angular/common/http';
+    import { User, CreateUser } from '../models/user.models';
+
+    import { environment } from './../../environments/environments';
+
+    @Injectable({
+      providedIn: 'root'
+    })
+    export class UserService {
+
+      urlApi = `${environment.API_URL}/api/users`
+
+      constructor(private http: HttpClient) { }
+
+      create(user : CreateUser) { 
+        return this.http.post<User>(this.urlApi, user)
+      }
+
+      getAll(){
+        return this.http.get<User[]>(this.urlApi)
+      }
+    }
+
+En auth vamos a guardar la logica para el login.
+
+    import { Injectable } from '@angular/core';
+    import { HttpClient } from '@angular/common/http';
+    import { Auth } from './../models/auth.models';
+
+    import { environment } from './../../environments/environments';
+
+    @Injectable({
+      providedIn: 'root'
+    })
+    export class AuthService {
+
+      urlApi = `${environment.API_URL}/api/auth`
+
+      constructor(private http: HttpClient) { }
+
+      login(email: string, password: string) {
+        return this.http.post<Auth>(`${this.urlApi}/login`, { email, password })
+      }
+      profile(token : string) {
+        return this.http.get<User>(`${this.urlApi}/profile`,{
+          headers: {
+            Authorization: `Bearer ${token}`,
+          }
+        })
+  }
+    }
+
+y por ultimo nuestro token, lo dejaremos como esta por ahora.
+
+
+No tenemos que olvidarnos de crear nuestras interfaces para cada uno de nuestros servicios.
+
+    // interfaces/user.interface.ts
+    export interface Credentials {
+      email: string;
+      password: string;
+    }
+    export interface Login {
+      access_token: string;
+    }
+    export interface User {
+      id: string;
+      email: string;
+      password: string;
+      name: string;
+    }
+
+Para no estar perdiendo el tiempo con un formulario y todo lo demas, vamos a hacer un ejemplo simple en app component.
+
+
+    import { AuthService } from './services/auth.service';
+    import { UserService } from './services/user.service';
+
+    export class AppComponent {
+
+      constructor(
+        private authService: AuthService,
+        private userService: UserService
+      ) { }
+
+      createUser() {
+        this.userService.create({
+          name: 'Sebas',
+          email: 'sebas@mail.com',
+          password: '1212'
+        })
+          .subscribe(rta => {
+            console.log(rta);
+          });
+      }
+
+       login() {
+        this.authService.login('Castellano@mail.com',
+          '1212')
+          .subscribe(rta => {
+            console.log(rta.access_token)
+            this.token = rta.access_token;
+          })
+      }
+    }
+
+Con esto despues de aprentar un boton podriamos crear y loguear el usuario recien creado. Luego de que el usuario se halla registrado, puedes utilizar el token para realizar peticiones al backend que requieran de autenticación. Para esto, es necesario inyectar dicho token en las solicitudes HTTP.
+
+Para esto, puedes obtener el token desde Local Storage (o si prefieres guardarlo en Cookies) e inyectarlo directamente en los Headers de la petición.
+
+    <app-nav></app-nav>
+    <button (click)="createUser()">Crear User</button>
+    <button (click)="login()">Loguear</button>
+    <button (click)="getProfile()">Get profile</button>
+
+    <app-products></app-products>
+
+**ts**
+
+    getProfile() {
+        this.authService.profile(this.token)
+          .subscribe(
+            profile => {
+              console.log(profile)
+
+            }
+          );
+      }
+
+## Uso de interceptores
+
+Un interceptor, como su nombre indica, interceptará las solicitudes HTTP antes de que se envíen al servidor, para agregar información a las request, manipular datos, entre otras utilidades.
+
+Con el CLI de Angular, puedes crear un interceptor con el comando
+
+    ng g interceptor <interceptro_name>. 
+
+Creemos uno para evaluar el tiempo y vamos al archivo.
+
+    ng g interceptor interceptors/time --flat
+
+    ...
+    import { tap } from 'rxjs/operators';
+
+    export class TimeInterceptor implements HttpInterceptor {
+
+      constructor() { }
+
+      intercept(request: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
+        const start = performance.now()
+        return next
+          .handle(request)
+          .pipe(tap(() => {
+            const time = (performance.now() - start) + 'mas';
+            console.log(request.url, time)
+          }));
+      }
+    }
+
+agregaremos el la nueva dependencia tap que nos permitira correr el proceso sin modicicar la respuesta. Luego hacemos la logica para medir el tiempo y manualmente llamamos a nuestro interceptor en app.module.ts
+
+    import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
+    import { TimeInterceptor } from './interceptors/time.interceptor';
+    ...
+
+    @NgModule({
+      ...
+       providers: [{
+        provide : HTTP_INTERCEPTORS,
+        useClass :TimeInterceptor,
+        multi:true
+      }],
+    })
+
+Ahora que estamos entendiendo como funciona, usemos los interceptores para enviar nuestros tokens. primero vamos a nuestro token.services y agregurmos los cambios.
+
+    export class TokenService {
+
+      constructor() { }
+
+      saveToken(token: string) {
+        localStorage.setItem('token', token);
+      }
+
+      getToken() {
+        const token = localStorage.getItem('token')
+        return token
+      }
+    }
+
+Luego en nuestro Auth.service importaremos y agregaremos una pipe a nuestro login.
+
+    import { Token } from '@angular/compiler';
+    import { tap } from 'rxjs/operators';
+    ...
+    
+    login(email: string, password: string) {
+        return this.http.post<Auth>(`${this.urlApi}/login`, { email, password })
+          .pipe( tap( response => this.TokenService.saveToken(response.access_token)))
+      }
+
+Ahora que vamos a usar token ya no nocesitaremos que la funcion profile reciba el toquen, despues de todo estaria guardada en el localStorage. simplemente derivaremos la tarea de enviar el token al interceptor.
+
+Para ello comencemos creando uno nuevo.
+
+    ng g interceptor interceptors/token --flat
+
+
+    import { TokenService } from '../services/token.service';
+
+    export class TokenInterceptor implements HttpInterceptor {
+
+      constructor(
+        private tokenService : TokenService
+      ) {}
+
+      intercept(request: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
+        request = this.addToken(request)
+        return next.handle(request);
+      }
+
+      private addToken(request : HttpRequest<unknown>){
+        const token = this.tokenService.getToken()
+        if (token) {
+          const authReq = request.clone({
+            headers: request.headers.set('Authorization', `Bearer ${token}`)
+        });
+        return authReq;
+        }
+        return request;
+      }
+    }
+
+
+Lo que hacemos es crear una nueva funcion que verifia si existe el token y si no devuelve el request tal y como estaba. Vamos a nuestro app.module para agregar este interceptor.
+
+    providers: [{
+    provide: HTTP_INTERCEPTORS,
+    useClass: TimeInterceptor,
+    multi: true
+    },
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: TokenInterceptor,
+      multi: true
+    }],
+
+Con esto agregamos una capa mas de seguridad a nuestra aplicacion y vemos que el coportamiento sigue siendo el mismo.

@@ -12,11 +12,13 @@ import { environment } from './../../environments/environments';
 export class ProductsService {
 
   urlApi = `${environment.API_URL}/api/products`
-  urlApi2 = 'https://young-sands-07814.herokuapp1.com/api/products'
+
+  //urlApi2 = 'https://young-sands-07814.herokuapp1.com/api/products'
 
   constructor(private http: HttpClient) { }
 
   getAllProduct() {
+    console.log(environment)
     return this.http.get<Product[]>(this.urlApi)
   }
 
